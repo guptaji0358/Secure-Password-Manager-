@@ -1,2 +1,3 @@
 secret.key
 passwords.json
+__pycache__/

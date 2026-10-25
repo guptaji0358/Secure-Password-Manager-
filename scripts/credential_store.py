@@ -36,6 +36,17 @@ class CredentialStore:
         self._write_data(data)
         return True
 
+    def all_credentials(self) -> list[tuple[str, str, str]]:
+        """Return every saved credential as website, email, and password."""
+        credentials = []
+        for website, record in self._read_data().items():
+            credentials.append((
+                website,
+                self.cipher.decrypt(record["email"]),
+                self.cipher.decrypt(record["password"]),
+            ))
+        return sorted(credentials, key=lambda credential: credential[0].lower())
+
     def _read_data(self) -> dict:
         if not self.data_file.exists():
             return {}

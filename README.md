@@ -3,7 +3,7 @@ DAY - 30/100 Project - Python X Secure Password Manager
 
 # 🔐 Secure Password Manager (Python)
 
-A GUI-based secure password manager built using **Python + Tkinter** with **encryption**, **login system**, and **file-based storage**.
+A modern desktop password manager built using **Python + PySide6** with **encryption**, **login system**, and **file-based storage**.
 
 ---
 
@@ -26,13 +26,14 @@ A GUI-based secure password manager built using **Python + Tkinter** with **encr
 ```
 Secure Password Manager/
  ├── main.py
- ├── Scripts/
+ ├── Assets/
+ │   └── PASSWORD_LOCK.png
+ ├── scripts/
  │   ├── app.py
  │   ├── config.py
  │   ├── credential_store.py
  │   ├── crypto_service.py
  │   └── password_generator.py
- └── PASSWORD_LOCK.png
 ```
 
 ---
@@ -42,13 +43,13 @@ Secure Password Manager/
 Install required packages:
 
 ```
-pip install cryptography pyperclip
+pip install -r requirements.txt
 ```
 
 Python Version:
 
 ```
-Python 3.8+
+Python 3.10+
 ```
 
 ---
