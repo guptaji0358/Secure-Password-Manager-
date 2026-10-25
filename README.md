@@ -24,11 +24,15 @@ A GUI-based secure password manager built using **Python + Tkinter** with **encr
 ## 📂 Folder Structure
 
 ```
-RawData/
- ├── PASSWORD_LOCK.png
- ├── passwords.json
- ├── secret.key
- └── 30_SECURE_PASSWORD_MANAGER_.py
+Secure Password Manager/
+ ├── main.py
+ ├── Scripts/
+ │   ├── app.py
+ │   ├── config.py
+ │   ├── credential_store.py
+ │   ├── crypto_service.py
+ │   └── password_generator.py
+ └── PASSWORD_LOCK.png
 ```
 
 ---
@@ -51,16 +55,15 @@ Python 3.8+
 
 ## ▶️ How to Run
 
-1. Put all files in the same folder
-2. Open Terminal / CMD
-3. Run:
+1. Open Terminal / CMD in the project folder.
+2. Run:
 
 ```
 python main.py
 ```
 
-4. Enter Master Password
-5. Start using the app
+3. Enter Master Password
+4. Start using the app
 
 ---
 
