@@ -14,11 +14,35 @@ class CredentialStore:
         self.data_file = data_file
         self.cipher = cipher
 
-    def save(self, website: str, email: str, password: str) -> None:
+    def save(
+        self, website: str, email: str, password: str, notes: str = "",
+        category: str = "Personal", favorite: bool = False,
+    ) -> None:
+        """Save a credential and its encrypted supporting details."""
         data = self._read_data()
         data[website] = {
             "email": self.cipher.encrypt(email),
             "password": self.cipher.encrypt(password),
+            "notes": self.cipher.encrypt(notes),
+            "category": category,
+            "favorite": favorite,
+        }
+        self._write_data(data)
+
+    def update(
+        self, original_website: str, website: str, email: str, password: str,
+        notes: str, category: str, favorite: bool,
+    ) -> None:
+        """Replace a credential, optionally renaming its website key."""
+        data = self._read_data()
+        if original_website != website:
+            data.pop(original_website, None)
+        data[website] = {
+            "email": self.cipher.encrypt(email),
+            "password": self.cipher.encrypt(password),
+            "notes": self.cipher.encrypt(notes),
+            "category": category,
+            "favorite": favorite,
         }
         self._write_data(data)
 
@@ -36,14 +60,21 @@ class CredentialStore:
         self._write_data(data)
         return True
 
-    def all_credentials(self) -> list[tuple[str, str, str]]:
-        """Return every saved credential as website, email, and password."""
+    def all_credentials(self) -> list[tuple[str, str, str, str, str, bool]]:
+        """Return every credential, decrypting sensitive fields.
+
+        Entries saved by earlier versions remain readable: notes, category, and
+        favorite status receive safe defaults when those fields are absent.
+        """
         credentials = []
         for website, record in self._read_data().items():
             credentials.append((
                 website,
                 self.cipher.decrypt(record["email"]),
                 self.cipher.decrypt(record["password"]),
+                self.cipher.decrypt(record["notes"]) if "notes" in record else "",
+                record.get("category", "Personal"),
+                bool(record.get("favorite", False)),
             ))
         return sorted(credentials, key=lambda credential: credential[0].lower())
 

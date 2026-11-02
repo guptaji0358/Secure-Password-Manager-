@@ -72,6 +72,20 @@ QPushButton[iconOnly="true"] {
     padding: 5px;
 }
 
+QToolButton#copyButton {
+    min-width: 28px;
+    max-width: 28px;
+    min-height: 28px;
+    padding: 2px;
+    background: transparent;
+    border-color: transparent;
+}
+
+QToolButton#copyButton:hover {
+    background: #32355d;
+    border-color: #5c5f93;
+}
+
 QPushButton#primaryButton {
     background: #7657e7;
     border-color: #a98fff;
@@ -169,6 +183,54 @@ QLabel#credentialDetail {
 QLabel#credentialPassword {
     color: #f5d2a1;
     font-family: "Cascadia Code", "Consolas", monospace;
+}
+
+QLabel#credentialCategory {
+    background: #302d5c;
+    border-radius: 8px;
+    color: #d8d2ff;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 3px 8px;
+}
+
+QLabel#strengthNeutral {
+    color: #aeb0cb;
+}
+
+QLabel#strengthWeak {
+    color: #ff92a8;
+    font-weight: 600;
+}
+
+QLabel#strengthFair {
+    color: #f0b45c;
+    font-weight: 600;
+}
+
+QLabel#strengthStrong {
+    color: #91e0b7;
+    font-weight: 600;
+}
+
+QTextEdit,
+QComboBox {
+    background: #14162b;
+    border: 1px solid #41436f;
+    border-radius: 10px;
+    color: #f8f7ff;
+    padding: 6px 11px;
+}
+
+QComboBox::drop-down {
+    border: none;
+    width: 26px;
+}
+
+QComboBox QAbstractItemView {
+    background: #202242;
+    border: 1px solid #41436f;
+    selection-background-color: #7657e7;
 }
 
 QScrollBar:vertical {
