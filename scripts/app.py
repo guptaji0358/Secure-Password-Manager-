@@ -3,11 +3,12 @@
 from pathlib import Path
 
 from PySide6.QtCore import QEasingCurve, QPropertyAnimation, QSequentialAnimationGroup, QSize, QTimer, Qt
-from PySide6.QtGui import QEnterEvent, QIcon, QPixmap
+from PySide6.QtGui import QEnterEvent, QIcon, QPixmap, QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import QApplication, QCheckBox, QComboBox, QFormLayout, QFrame, QGraphicsOpacityEffect, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMessageBox, QPushButton, QScrollArea, QStackedWidget, QTabWidget, QTextEdit, QToolButton, QVBoxLayout, QWidget
 
 from .credential_store import CredentialStore
 from .config import ICON_DIR, STYLESHEET_FILE
+from .master_password_store import MasterPasswordStore
 from .password_generator import generate_password
 
 
@@ -86,10 +87,16 @@ class CopyableDetailRow(QWidget):
 class PasswordManagerApp(QMainWindow):
     """Modern desktop interface backed by the credential store."""
 
-    def __init__(self, store: CredentialStore, master_password: str, image_file: str):
+    def __init__(self, store: CredentialStore, master_password_store: MasterPasswordStore, image_file: str):
         super().__init__()
-        self.store, self.master_password, self.image_file = store, master_password, Path(image_file)
+        self.store = store
+        self.master_password_store = master_password_store
+        self.image_file = Path(image_file)
         self.editing_website: str | None = None
+        self.auto_login_timer = QTimer(self)
+        self.auto_login_timer.setSingleShot(True)
+        self.auto_login_timer.setInterval(550)
+        self.auto_login_timer.timeout.connect(self._auto_login)
         self.setWindowTitle("Secure Password Manager")
         self.setWindowIcon(QIcon(str(self.image_file)))
         self.setMinimumSize(620, 560)
@@ -117,10 +124,11 @@ class PasswordManagerApp(QMainWindow):
         layout.addWidget(QLabel("Enter your master password to unlock your vault.", objectName="subtitle", alignment=Qt.AlignmentFlag.AlignCenter))
         self.login_input = QLineEdit(placeholderText="Master password")
         self.login_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.login_input.textChanged.connect(self._schedule_auto_login)
         self.login_input.returnPressed.connect(self.login)
         layout.addWidget(self.login_input)
         login_button = self._icon_button("unlock", "Unlock vault", "primaryButton")
-        login_button.clicked.connect(self.login)
+        login_button.clicked.connect(lambda: self.login())
         layout.addWidget(login_button)
         return page
 
@@ -134,6 +142,10 @@ class PasswordManagerApp(QMainWindow):
         self.vault_tabs = QTabWidget()
         self.vault_tabs.addTab(self._create_add_password_tab(), "Add password")
         self.vault_tabs.addTab(self._create_saved_passwords_tab(), "Saved passwords")
+        self.vault_tabs.addTab(self._create_settings_tab(), "Settings")
+        self.vault_tabs.setUsesScrollButtons(False)
+        self.vault_tabs.tabBar().setExpanding(True)
+        self.vault_tabs.tabBar().setElideMode(Qt.TextElideMode.ElideRight)
         self.vault_tabs.currentChanged.connect(self._handle_tab_change)
         outer_layout.addWidget(self.vault_tabs)
         return page
@@ -171,8 +183,22 @@ class PasswordManagerApp(QMainWindow):
         self.show_password.toggled.connect(self.toggle_password)
         self.strength_label = QLabel("Password strength: enter a password", objectName="strengthNeutral")
         self.category_input = QComboBox()
-        self.category_input.addItems(["Personal", "Work", "Banking", "Social", "Other"])
-        self.favorite_input = QCheckBox("Favorite")
+        self.category_model = QStandardItemModel(self.category_input)
+        self.favorite_category_item = QStandardItem("★ Favorite")
+        self.favorite_category_item.setFlags(
+            Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsUserCheckable
+        )
+        self.favorite_category_item.setData(Qt.CheckState.Unchecked, Qt.ItemDataRole.CheckStateRole)
+        self.category_model.appendRow(self.favorite_category_item)
+        for category in ("Personal", "Work", "Banking", "Social", "Other"):
+            self.category_model.appendRow(QStandardItem(category))
+        self.category_input.setModel(self.category_model)
+        self.category_input.setEditable(True)
+        self.category_input.lineEdit().setReadOnly(True)
+        self.category_input.setCurrentIndex(1)
+        self.selected_category_index = 1
+        self.category_input.currentIndexChanged.connect(self._remember_category_selection)
+        self.category_input.view().pressed.connect(self._handle_category_menu_selection)
         self.notes_input = QTextEdit(placeholderText="Recovery codes or account notes (encrypted)")
         self.notes_input.setFixedHeight(76)
         form.addRow("Website", self.website_input)
@@ -180,7 +206,6 @@ class PasswordManagerApp(QMainWindow):
         form.addRow("Password", password_row)
         form.addRow("Strength", self.strength_label)
         form.addRow("Category", self.category_input)
-        form.addRow("", self.favorite_input)
         form.addRow("Notes", self.notes_input)
         form.addRow("", self.show_password)
         form_content_layout.addWidget(card)
@@ -201,6 +226,55 @@ class PasswordManagerApp(QMainWindow):
         actions.addStretch()
         actions.addWidget(save_button)
         tab_layout.addLayout(actions)
+        return tab
+
+    def _create_settings_tab(self) -> QWidget:
+        """Create the authenticated master-password change screen."""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setContentsMargins(0, 18, 0, 0)
+        layout.setSpacing(14)
+        content_scroll_area = QScrollArea()
+        content_scroll_area.setWidgetResizable(True)
+        content_scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+        content = QWidget()
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(0, 0, 8, 0)
+        content_layout.setSpacing(18)
+        content_layout.addWidget(QLabel("Settings", objectName="sectionTitle"))
+        guidance = QLabel(
+            "Change the password required to unlock this vault. Your password is never stored; "
+            "only a salted verifier is saved locally.",
+            objectName="subtitle",
+        )
+        guidance.setWordWrap(True)
+        content_layout.addWidget(guidance)
+        card = QFrame(objectName="card")
+        form = QFormLayout(card)
+        form.setContentsMargins(14, 22, 14, 22)
+        form.setHorizontalSpacing(20)
+        form.setVerticalSpacing(16)
+        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        self.current_master_input = QLineEdit(placeholderText="Current master password")
+        self.new_master_input = QLineEdit(placeholderText="New master password")
+        self.confirm_master_input = QLineEdit(placeholderText="Confirm new master password")
+        for password_input in (self.current_master_input, self.new_master_input, self.confirm_master_input):
+            password_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.show_master_passwords = QCheckBox("Show passwords")
+        self.show_master_passwords.toggled.connect(self.toggle_master_password_visibility)
+        form.addRow("Current password", self.current_master_input)
+        form.addRow("New password", self.new_master_input)
+        form.addRow("Confirm password", self.confirm_master_input)
+        form.addRow("", self.show_master_passwords)
+        content_layout.addWidget(card)
+        content_layout.addStretch()
+        content_scroll_area.setWidget(content)
+        layout.addWidget(content_scroll_area, 1)
+        change_button = QPushButton("Change master password", objectName="primaryButton")
+        change_button.setToolTip("Change the password used to unlock the vault")
+        change_button.clicked.connect(self.change_master_password)
+        layout.addWidget(change_button, alignment=Qt.AlignmentFlag.AlignRight)
         return tab
 
     def _create_saved_passwords_tab(self) -> QWidget:
@@ -239,8 +313,18 @@ class PasswordManagerApp(QMainWindow):
         layout.addWidget(refresh_button, alignment=Qt.AlignmentFlag.AlignRight)
         return tab
 
-    def login(self) -> None:
-        if self.login_input.text() != self.master_password:
+    def _schedule_auto_login(self, password: str) -> None:
+        self.auto_login_timer.stop()
+        if password:
+            self.auto_login_timer.start()
+
+    def _auto_login(self) -> None:
+        self.login(show_error=False)
+
+    def login(self, show_error: bool = True) -> None:
+        if not self.master_password_store.verify(self.login_input.text()):
+            if not show_error:
+                return
             QMessageBox.warning(self, "Incorrect password", "The master password is incorrect.")
             self.login_input.selectAll()
             self.login_input.setFocus()
@@ -262,7 +346,7 @@ class PasswordManagerApp(QMainWindow):
             QMessageBox.information(self, "Missing details", "Website and password are required.")
             return
         details = (website, self.email_input.text(), password, self.notes_input.toPlainText(),
-                   self.category_input.currentText().strip() or "Personal", self.favorite_input.isChecked())
+                   self._selected_category(), self._is_favorite_selected())
         if self.editing_website:
             self.store.update(self.editing_website, *details)
         else:
@@ -286,6 +370,40 @@ class PasswordManagerApp(QMainWindow):
     def toggle_password(self, visible: bool) -> None:
         self.password_input.setEchoMode(QLineEdit.EchoMode.Normal if visible else QLineEdit.EchoMode.Password)
 
+    def toggle_master_password_visibility(self, visible: bool) -> None:
+        mode = QLineEdit.EchoMode.Normal if visible else QLineEdit.EchoMode.Password
+        for password_input in (self.current_master_input, self.new_master_input, self.confirm_master_input):
+            password_input.setEchoMode(mode)
+
+    def change_master_password(self) -> None:
+        current_password = self.current_master_input.text()
+        new_password = self.new_master_input.text()
+        confirmation = self.confirm_master_input.text()
+        if not current_password or not new_password or not confirmation:
+            QMessageBox.information(self, "Missing details", "Complete every password field.")
+            return
+        if len(new_password) < 8:
+            QMessageBox.information(self, "Choose a longer password", "Your new master password must contain at least 8 characters.")
+            self.new_master_input.setFocus()
+            return
+        if new_password != confirmation:
+            QMessageBox.warning(self, "Passwords do not match", "Enter the same new password in both fields.")
+            self.confirm_master_input.selectAll()
+            self.confirm_master_input.setFocus()
+            return
+        if not self.master_password_store.change(current_password, new_password):
+            QMessageBox.warning(self, "Incorrect password", "The current master password is incorrect.")
+            self.current_master_input.selectAll()
+            self.current_master_input.setFocus()
+            return
+        self.current_master_input.clear()
+        self.new_master_input.clear()
+        self.confirm_master_input.clear()
+        self.show_master_passwords.setChecked(False)
+        self.pages.setCurrentIndex(0)
+        self.login_input.setFocus()
+        QMessageBox.information(self, "Master password changed", "The vault is locked. Unlock it with your new password.")
+
     def update_strength_indicator(self, password: str) -> None:
         score = sum((len(password) >= 12, any(char.islower() for char in password),
                      any(char.isupper() for char in password), any(char.isdigit() for char in password),
@@ -299,14 +417,57 @@ class PasswordManagerApp(QMainWindow):
         self.strength_label.style().unpolish(self.strength_label)
         self.strength_label.style().polish(self.strength_label)
 
+    def _remember_category_selection(self, index: int) -> None:
+        if index > 0:
+            self.selected_category_index = index
+            self._refresh_category_display()
+
+    def _handle_category_menu_selection(self, index) -> None:
+        if index.row() != 0:
+            return
+        new_state = (
+            Qt.CheckState.Unchecked
+            if self.favorite_category_item.checkState() == Qt.CheckState.Checked
+            else Qt.CheckState.Checked
+        )
+        self.favorite_category_item.setCheckState(new_state)
+        QTimer.singleShot(0, self._restore_category_selection)
+
+    def _restore_category_selection(self) -> None:
+        self.category_input.setCurrentIndex(self.selected_category_index)
+        self._refresh_category_display()
+
+    def _refresh_category_display(self) -> None:
+        category = self._selected_category()
+        suffix = "  •  Favorite" if self._is_favorite_selected() else ""
+        self.category_input.setEditText(f"{category}{suffix}")
+
+    def _selected_category(self) -> str:
+        return self.category_model.item(self.selected_category_index).text()
+
+    def _is_favorite_selected(self) -> bool:
+        return self.favorite_category_item.checkState() == Qt.CheckState.Checked
+
+    def _set_category_and_favorite(self, category: str, favorite: bool) -> None:
+        category_index = next(
+            (index for index in range(1, self.category_model.rowCount())
+             if self.category_model.item(index).text() == category),
+            1,
+        )
+        self.selected_category_index = category_index
+        self.category_input.setCurrentIndex(category_index)
+        self.favorite_category_item.setCheckState(
+            Qt.CheckState.Checked if favorite else Qt.CheckState.Unchecked
+        )
+        self._refresh_category_display()
+
     def clear_form(self) -> None:
         self.editing_website = None
         self.website_input.clear()
         self.email_input.clear()
         self.password_input.clear()
         self.notes_input.clear()
-        self.category_input.setCurrentText("Personal")
-        self.favorite_input.setChecked(False)
+        self._set_category_and_favorite("Personal", False)
         self.show_password.setChecked(False)
         self.cancel_edit_button.hide()
         self.save_button.setToolTip("Save password")
@@ -318,8 +479,7 @@ class PasswordManagerApp(QMainWindow):
         self.email_input.setText(email)
         self.password_input.setText(password)
         self.notes_input.setPlainText(notes)
-        self.category_input.setCurrentText(category)
-        self.favorite_input.setChecked(favorite)
+        self._set_category_and_favorite(category, favorite)
         self.cancel_edit_button.show()
         self.save_button.setToolTip("Update password")
         self.save_button.setAccessibleName("Update password")

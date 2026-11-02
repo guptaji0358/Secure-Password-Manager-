@@ -20,6 +20,7 @@ Python 3.10 or newer is required.
 - `scripts/config.py` defines project-relative data, asset, and icon paths.
 - `scripts/credential_store.py` manages credential persistence.
 - `scripts/crypto_service.py` manages Fernet encryption.
+- `scripts/master_password_store.py` stores a salted master-password verifier.
 - `scripts/password_generator.py` produces secure random passwords.
 - `Assets/styles.qss` contains the Nightfall Vault visual theme.
 - `Assets/icons/` contains the application SVG icons.
@@ -32,6 +33,7 @@ Never commit, rename, delete, or use real vault data in tests without explicit u
 
 - `secret.key`
 - `passwords.json`
+- `master_password.json`
 
 They must remain ignored by Git. Use temporary files for storage tests.
 
@@ -41,6 +43,8 @@ They must remain ignored by Git. Use temporary files for storage tests.
 - Icon-only buttons require meaningful tooltips and accessible names.
 - Passwords are hidden in input fields by default.
 - Saved credential cards include clipboard-copy support for email and password.
+- The Settings tab changes the persistent master password; it stores only a salted verifier and locks the vault after a successful change.
+- The login screen automatically unlocks shortly after the correct master password is entered.
 
 ## Validation
 
